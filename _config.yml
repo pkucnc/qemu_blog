@@ -1,2 +1,3 @@
 theme: just-the-docs
 title: "PKUCNC QEMU internals"
+description: A series of posts about QEMU internals, refreshed for RISC-V architecture
