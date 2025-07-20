@@ -1,3 +1,8 @@
+---
+layout: default
+title: Tcg P2
+---
+
 # A deep dive into QEMU: The Tiny Code Generator (TCG), part 2
 
 This blog post is the second [part](tcg_p1.md) dedicated to the QEMU

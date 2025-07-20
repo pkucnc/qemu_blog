@@ -1,3 +1,8 @@
+---
+layout: default
+title: Regions
+---
+
 # A deep dive into QEMU: memory regions
 
 In this post we'll have a glance at high level memory organisation in

@@ -1,3 +1,8 @@
+---
+layout: default
+title: Pci
+---
+
 # A deep dive into QEMU: PCI host bridge controller
 
 The QEMU PCI subsystem is really interesting to understand. Because

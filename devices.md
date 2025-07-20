@@ -1,3 +1,8 @@
+---
+layout: default
+title: Devices
+---
+
 # A deep dive into QEMU: adding devices
 
 In this post, we will see how to create a simple new device. Other

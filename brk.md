@@ -1,3 +1,8 @@
+---
+layout: default
+title: Brk
+---
+
 # A deep dive into QEMU: Breakpoints handling
 
 In this post we will learn how breakpoints are checked and raised

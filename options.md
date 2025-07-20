@@ -1,3 +1,8 @@
+---
+layout: default
+title: Options
+---
+
 # A deep dive into QEMU: Giving and adding options
 
 In this blog post we will see how we can give QEMU access to a file in

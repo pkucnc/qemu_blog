@@ -1,3 +1,8 @@
+---
+layout: default
+title: Tcg P1
+---
+
 # A deep dive into QEMU: The Tiny Code Generator (TCG), part 1
 
 This blog post details some internals of the QEMU TCG engine, the

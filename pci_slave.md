@@ -1,3 +1,8 @@
+---
+layout: default
+title: Pci Slave
+---
+
 # A deep dive into QEMU: PCI slave devices
 
 In the first [PCI article](pci.md) we covered the host bridge

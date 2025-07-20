@@ -1,3 +1,8 @@
+---
+layout: default
+title: Exec
+---
+
 # A deep dive into QEMU: The execution loop
 
 This is the beginning of the second part of the blog post series. We

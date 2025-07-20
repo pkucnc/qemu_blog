@@ -1,3 +1,8 @@
+---
+layout: default
+title: Tcg P3
+---
+
 # A deep dive into QEMU: TCG memory accesses
 
 This blog post details how the QEMU TCG engine manages guest memory

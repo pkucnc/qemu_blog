@@ -1,3 +1,8 @@
+---
+layout: default
+title: Interrupts
+---
+
 # A deep dive into QEMU: interrupt controller
 
 In this post, we will see how to create an interrupt controller.

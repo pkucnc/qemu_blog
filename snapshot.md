@@ -1,3 +1,8 @@
+---
+layout: default
+title: Snapshot
+---
+
 # A deep dive into QEMU: snapshot API
 
 This blog post gives some insights on the QEMU snapshot API.
