@@ -1,4 +1,6 @@
-# Introduction
+# CLab QEMU Internals
+
+This lecture series is adopted from the [QEMU Internals](https://airbus-seclab.github.io/qemu_blog/) blog posts published by Airbus Security Lab. Compared to the original posts, we changed the target architecture to `riscv64`, rebase qemu to 10.0.2, and removed `TCG` related content.
 
 This is a series of posts about **QEMU internals**. It won't cover
 everything about QEMU, but should help you understand how it works and
@@ -18,7 +20,6 @@ official documentation. The following topics will be addressed:
 - [Execution loop](exec.md)
 - [Breakpoints handling](brk.md)
 - [VM running states](runstate.md)
-- TCG internals [part 1](tcg_p1.md), [part 2](tcg_p2.md) and [part 3](tcg_p3.md)
 - [Snapshots](snapshot.md)
 
 The official code and documentation can be found here:
@@ -37,7 +38,7 @@ The target is the architecture which is emulated by QEMU. You can
 choose at build time which one you want:
 
 ```
-./configure --target-list=ppc-softmmu ...
+./configure --target-list=riscv64-softmmu,x86_64-softmmu ...
 ```
 
 As such, in the source code organisation you will find all supported
@@ -45,27 +46,25 @@ architectures in the `target/` directory:
 
 ```
 (qemu-git) ll target
-drwxrwxr-x 2 xxx xxx 4.0K alpha
-drwxrwxr-x 2 xxx xxx 4.0K arm
-drwxrwxr-x 2 xxx xxx 4.0K cris
-drwxrwxr-x 2 xxx xxx 4.0K hppa
-drwxrwxr-x 3 xxx xxx 4.0K i386
-drwxrwxr-x 2 xxx xxx 4.0K lm32
-drwxrwxr-x 2 xxx xxx 4.0K m68k
-drwxrwxr-x 2 xxx xxx 4.0K microblaze
-drwxrwxr-x 2 xxx xxx 4.0K mips
-drwxrwxr-x 2 xxx xxx 4.0K moxie
-drwxrwxr-x 2 xxx xxx 4.0K nios2
-drwxrwxr-x 2 xxx xxx 4.0K openrisc
-drwxrwxr-x 3 xxx xxx 4.0K ppc
-drwxr-xr-x 3 xxx xxx 4.0K riscv
-drwxrwxr-x 2 xxx xxx 4.0K s390x
-drwxrwxr-x 2 xxx xxx 4.0K sh4
-drwxrwxr-x 2 xxx xxx 4.0K sparc
-drwxrwxr-x 2 xxx xxx 4.0K tilegx
-drwxrwxr-x 2 xxx xxx 4.0K tricore
-drwxrwxr-x 2 xxx xxx 4.0K unicore32
-drwxrwxr-x 9 xxx xxx 4.0K xtensa
+drwxrwxr-x  2 xxx xxx 4.0K  alpha/
+drwxrwxr-x  4 xxx xxx 4.0K  arm/
+drwxrwxr-x  2 xxx xxx 4.0K  avr/
+drwxrwxr-x  5 xxx xxx 4.0K  hexagon/
+drwxrwxr-x  2 xxx xxx 4.0K  hppa/
+drwxrwxr-x  7 xxx xxx 4.0K  i386/
+drwxrwxr-x  4 xxx xxx 4.0K  loongarch/
+drwxrwxr-x  2 xxx xxx 4.0K  m68k/
+drwxrwxr-x  2 xxx xxx 4.0K  microblaze/
+drwxrwxr-x  4 xxx xxx 4.0K  mips/
+drwxrwxr-x  2 xxx xxx 4.0K  openrisc/
+drwxrwxr-x  3 xxx xxx 4.0K  ppc/
+drwxrwxr-x  5 xxx xxx 4.0K  riscv/
+drwxrwxr-x  2 xxx xxx 4.0K  rx/
+drwxrwxr-x  4 xxx xxx 4.0K  s390x/
+drwxrwxr-x  2 xxx xxx 4.0K  sh4/
+drwxrwxr-x  2 xxx xxx 4.0K  sparc/
+drwxrwxr-x  2 xxx xxx 4.0K  tricore/
+drwxrwxr-x 12 xxx xxx 4.0K  xtensa/
 ```
 
 The `qemu-system-<target>` binaries are built into their respective `<target>-softmmu` directory:
@@ -198,10 +197,14 @@ underlying implementation. Stay pragmatic !
 The interested reader can have a look at
 [include/qom/object.h](https://github.com/qemu/qemu/tree/v4.2.0/include/qom/object.h).
 
-# Disclaimer
+# Disclaimer from Airbus
 
 It shall be noted that Airbus does not commit itself on the
 exhaustiveness and completeness regarding this blog post series. The
 information presented here results from the author knowledge and
 understandings as of [QEMU
-v4.2.0](https://github.com/qemu/qemu/tree/v4.2.0).
+v4.2.0](https://github.com/qemu/qemu/tree/v4.2.0)
+
+# Disclaimer from CLab
+
+CLab does not commit itself on the exhaustiveness and completeness regarding this blog post series. The information presented here results from the author knowledge and understandings as of [QEMU v10.0.2](https://github.com/qemu/qemu/tree/v10.0.2)
