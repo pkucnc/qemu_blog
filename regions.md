@@ -213,17 +213,26 @@ static const MemMapEntry clabpu_memmap[] = {
 
 static void clabpu_init_mem(CLabPUState *clabpu, MachineState *machine)
 {
+    const MemMapEntry *memmap = clabpu_memmap;
     MemoryRegion *system_memory = get_system_memory();
     MemoryRegion *mask_rom = g_new(MemoryRegion, 1);
 
     /* register system main memory */
-    memory_region_add_subregion(system_memory, memmap[CLABPU_DRAM].base,
-        machine->ram);
+    memory_region_add_subregion(system_memory, memmap[CLABPU_DRAM].base, machine->ram);
     /* boot rom */
-    memory_region_init_rom(mask_rom, NULL, "riscv.clabpu.mrom",
-                           memmap[CLABPU_MROM].size, &error_fatal);
+    memory_region_init_rom(mask_rom, NULL, "riscv.clabpu.mrom", memmap[CLABPU_MROM].size, &error_fatal);
     memory_region_add_subregion(system_memory, memmap[CLABPU_MROM].base, mask_rom);
 }
+```
+
+Add enums required in `include/hw/riscv/clabpu.h`:
+```c
+enum {
+    CLABPU_MROM,
+    CLABPU_HTIF,
+    CLABPU_CLINT,
+    CLABPU_DRAM,
+};
 ```
 
 Don't forget to call `clabpu_init_mem()` in the `clabpu_init()` function.
