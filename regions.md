@@ -202,7 +202,8 @@ So doing something like `writeq(0x42, 0x1f000500)` will call `malta_fpga_write()
 
 ## Init memory for CLabPU Machine
 
-CLabPU has a DRAM memory region, which should be initialized. Add the following code:
+CLabPU has a DRAM memory region, which should be initialized. Add the following code to clabpu.c
+
 ```c
 static const MemMapEntry clabpu_memmap[] = {
     [CLABPU_MROM] =     {     0x1000,     0xf000 },
@@ -223,6 +224,12 @@ static void clabpu_init_mem(CLabPUState *clabpu, MachineState *machine)
     memory_region_init_rom(mask_rom, NULL, "riscv.clabpu.mrom", memmap[CLABPU_MROM].size, &error_fatal);
     memory_region_add_subregion(system_memory, memmap[CLABPU_MROM].base, mask_rom);
 }
+
+void clabpu_machine_init(ObjectClass *oc, void *data) {
+  ...
+  mc->default_ram_id = "clabpu.ram"; // add this line, else no memory region will be created for the machine
+  ...
+} 
 ```
 
 Add enums required in `include/hw/riscv/clabpu.h`:
@@ -236,3 +243,20 @@ enum {
 ```
 
 Don't forget to call `clabpu_init_mem()` in the `clabpu_init()` function.
+
+You can validate your implementation by running the following command. You can see the memory regions created for the CLabPU machine, including the DRAM and the mask ROM:
+
+```bash
+qemu-system-riscv64 -M clabpu -s -S -nographic
+qemu-system-riscv64: warning: disabling zfa extension for hart 0x0000000000000000 because privilege spec version does not match
+QEMU 10.0.2 monitor - type 'help' for more information
+(qemu) info mtree
+address-space: cpu-memory-0
+address-space: memory
+  0000000000000000-ffffffffffffffff (prio 0, i/o): system
+    0000000000001000-000000000000ffff (prio 0, rom): riscv.clabpu.mrom
+    0000000080000000-00000000ffffffff (prio 0, ram): clabpu.ram
+
+address-space: I/O
+  0000000000000000-000000000000ffff (prio 0, i/o): io
+```
