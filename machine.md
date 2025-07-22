@@ -253,3 +253,25 @@ $ qemu-system-riscv64 -M clabpu -cpu thead-c906 -nographic
 ```
 
 This is not exhaustive, but you got the point. If you want to learn more about RISC-V CPU models, you can refer to the [RISC-V CPU Models documentation](https://www.qemu.org/docs/master/system/target-riscv.html).
+
+### Side note
+
+QEMU has its own conventions and programming style. Let us take `DECLARE_INSTANCE_CHECKER ` as an example. DECLARE_INSTANCE_CHECKER is a macro introduced in QEMU's QOM (QEMU Object Model) to provide type-safe casting functions for object instances. It's part of QEMU's effort to modernize and standardize the way object types are declared and used throughout the codebase.
+
+#### Syntax
+
+```c
+DECLARE_INSTANCE_CHECKER(InstanceType, MACRO_NAME, TYPE_NAME)
+```
+
+Where:
+- `InstanceType`: The C struct type for your object instance
+- `MACRO_NAME`: The name of the generated cast macro (typically uppercase)
+- `TYPE_NAME`: The QOM type name string
+
+The macro expands to create a static inline function that:
+- Checks if the object is of the correct type (in debug mode)
+- Performs a safe cast to the target type
+- Returns NULL if the cast is invalid (in debug mode)
+
+Also, the object lifecycle is managed through QOM, which includes object creation, initialization, and destruction. Don't use `gnew_` or `g_malloc0_` to allocate memory for QOM objects. Instead, use `object_new()` or `object_initialize_child()` to create and initialize objects properly.
