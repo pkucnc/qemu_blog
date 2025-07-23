@@ -16,8 +16,7 @@ official documentation. The following topics will be addressed:
 
 - [Creating a new machine](machine.html)
 - [Controlling memory regions](regions.html)
-- [Creating a new device](devices.html)
-- [Interrupts controller](interrupts.html)
+- [Creating interrupts controller and new devices](devices.html)
 - [Timers](timers.html)
 - [PCI controller](pci.html)
 - [PCI devices](pci_slave.html)

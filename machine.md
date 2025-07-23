@@ -73,7 +73,20 @@ our new machine and futur devices:
 ```bash
 $ cat hw/riscv/meson.build
 ...
-riscv_ss.add(files('clabpu.c'))
+riscv_ss.add(files('CONFIG_CLABPU', if_true: files('clabpu.c')))
+...
+
+$ cat hw/riscv/Kconfig
+...
+config CLABPU
+    bool
+    default y
+    depends on RISCV64
+    select RISCV_NUMA
+    select HTIF
+    select RISCV_ACLINT
+    select SIFIVE_PLIC
+    select CLABPU_INTC
 ...
 ```
 
@@ -131,7 +144,9 @@ void clabpu_machine_init(ObjectClass *oc, void *data)
     mc->init = clabpu_init;
     mc->default_cpu_type = TYPE_RISCV_CPU_THEAD_C906;
     mc->default_ram_size = 0x80000000; // 2GB
-    mc->max_cpus = CLABPU_CPUS_MAX;
+    mc->default_ram_id = "clabpu.ram";
+    mc->max_cpus = 1;
+    mc->default_cpus = 1;
     // riscv specific properties
     mc->possible_cpu_arch_ids = riscv_numa_possible_cpu_arch_ids;
     mc->cpu_index_to_instance_props = riscv_numa_cpu_index_to_props;
@@ -156,7 +171,8 @@ static void clabpu_init(MachineState *machine)
     CLabPUState *clabpu = CLABPU_MACHINE(machine);
 
     clabpu_init_cpu(clabpu, machine);
-    clabpu_init_dev(clabpu);
+    clabpu_init_mem(clabpu, machine);
+    clabpu_init_dev(clabpu, machine);
     clabpu_init_boot(clabpu);
 }
 ```
@@ -169,46 +185,41 @@ RISC-V machines in QEMU often use hart arrays to manage multiple CPU cores (hart
 
 ```c
 static void clabpu_init_cpu(CLabPUState *clabpu, MachineState *machine){
-    int i, base_hartid, hart_count; 
+    int base_hartid, hart_count; 
     char *soc_name;
-    if (CLABPU_CPUS_MAX < riscv_socket_count(machine)) {
-        error_report("number of sockets/nodes should be less than %d",
-            CLABPU_CPUS_MAX);
+    if (riscv_socket_count(machine) != 1) {
+        error_report("number of sockets/nodes should be 1 for CLabPU");
         exit(1);
     }
 
-    for (i = 0; i < riscv_socket_count(machine); i++) {
-        if (!riscv_socket_check_hartids(machine, i)) {
-            error_report("discontinuous hartids in socket%d", i);
-            exit(1);
-        }
-
-        base_hartid = riscv_socket_first_hartid(machine, i);
-        if (base_hartid < 0) {
-            error_report("can't find hartid base for socket%d", i);
-            exit(1);
-        }
-
-        hart_count = riscv_socket_hart_count(machine, i);
-        if (hart_count < 0) {
-            error_report("can't find hart count for socket%d", i);
-            exit(1);
-        }
-
-        soc_name = g_strdup_printf("clabpu-socket%d", i);
-        object_initialize_child(OBJECT(machine), soc_name, &clabpu->soc[i],
-                                TYPE_RISCV_HART_ARRAY);
-        g_free(soc_name);
-        object_property_set_str(OBJECT(&clabpu->soc[i]), "cpu-type",
-                                machine->cpu_type, &error_abort);
-        object_property_set_int(OBJECT(&clabpu->soc[i]), "hartid-base",
-                                base_hartid, &error_abort);
-        object_property_set_int(OBJECT(&clabpu->soc[i]), "num-harts",
-                                hart_count, &error_abort);
-        sysbus_realize(SYS_BUS_DEVICE(&clabpu->soc[i]), &error_fatal);
-
-        // we skip interruptor and timer for now
+    if (!riscv_socket_check_hartids(machine, 0)) {
+        error_report("discontinuous hartids in socket0");
+        exit(1);
     }
+
+    base_hartid = riscv_socket_first_hartid(machine, 0);
+    if (base_hartid < 0) {
+        error_report("can't find hartid base for socket%d", 0);
+        exit(1);
+    }
+
+    hart_count = riscv_socket_hart_count(machine, 0);
+    if (hart_count < 0) {
+        error_report("can't find hart count for socket%d", 0);
+        exit(1);
+    }
+
+    soc_name = g_strdup_printf("clabpu-socket0");
+    object_initialize_child(OBJECT(machine), soc_name, &clabpu->soc,
+                            TYPE_RISCV_HART_ARRAY);
+    g_free(soc_name);
+    object_property_set_str(OBJECT(&clabpu->soc), "cpu-type",
+                            machine->cpu_type, &error_abort);
+    object_property_set_int(OBJECT(&clabpu->soc), "hartid-base",
+                            base_hartid, &error_abort);
+    object_property_set_int(OBJECT(&clabpu->soc), "num-harts",
+                            hart_count, &error_abort);
+    sysbus_realize(SYS_BUS_DEVICE(&clabpu->soc), &error_fatal);
 }
 ```
 
