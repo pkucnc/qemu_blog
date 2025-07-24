@@ -1,6 +1,6 @@
 ---
 layout: default
-title: 02 Qemu memory regions
+title: 02 memory regions
 ---
 
 # A deep dive into QEMU: memory regions

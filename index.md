@@ -5,7 +5,19 @@ title: 00 Introduction
 
 # CLab QEMU Internals
 
-This lecture series is adopted from the [QEMU Internals](https://airbus-seclab.github.io/qemu_blog/) blog posts published by Airbus Security Lab. Compared to the original posts, we changed the target architecture to `riscv64`, rebase qemu to 10.0.2, and removed `TCG` related content.
+This lecture series is adopted from the [QEMU Internals](https://airbus-seclab.github.io/qemu_blog/) blog posts published by Airbus Security Lab. Compared to the original posts, we changed the target architecture to `riscv64`, rebase qemu to 10.0.2, specifically designed for PKU CLab kernel group. You can find the original posts [here](https://airbus-seclab.github.io/qemu_blog/).
+
+Code for this lecture series is available at [CLab QEMU Internals](https://github.com/pkucnc/qemu_internals). All code is developed and tested based on QEMU v10.0.2. If you find any bugs, please feel free to open an issue or submit a pull request.
+
+Example compile command:
+
+```bash
+./configure --prefix=~/install/ --target-list=riscv64-softmmu,x86_64-softmmu --disable-docs
+make -j$(nproc)
+make install
+```
+
+# Introduction
 
 This is a series of posts about **QEMU internals**. It won't cover
 everything about QEMU, but should help you understand how it works and

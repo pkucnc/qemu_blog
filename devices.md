@@ -1,6 +1,6 @@
 ---
 layout: default
-title: 03 Qemu devices and interrupts
+title: 03 devices and interrupts
 ---
 
 # A deep dive into QEMU: adding devices and interrupts
@@ -433,6 +433,23 @@ static void clabpu_edc_update_irq(CLabPUEdcState *s)
 }
 ```
 
+## Validation
+
+You'll be able to see the devices in the QEMU monitor:
+
+```
+$ qemu-system-riscv64 -M clabpu -cpu thead-c906 -nographic
+(qemu) info qom-tree
+/machine (clabpu-machine)
+...
+  /edc (clabpu-edc)
+    /clabpu-edc-err[0] (memory-region)
+    /clabpu-edc-reg1[0] (memory-region)
+  /intc (clabpu-intc)
+    /clabpu-intc[0] (memory-region)
+    /unnamed-gpio-in[0] (irq)
+...
+```
 ## Conclusion and key takeaways
 
 - Devices in QEMU are implemented as QObjects, inheriting from `DeviceState`.

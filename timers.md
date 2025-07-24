@@ -1,16 +1,16 @@
 ---
 layout: default
-title: Timers
+title: 04 Timers
 ---
 
 # A deep dive into QEMU: a Brief History of Time
 
-Ever wanted to play with general relativity ? QEMU is a simulation
-environment, guess what ? We can control time as seen by the VM !
+Ever wanted to play with general relativity? QEMU is a simulation
+environment, guess what? We can control time as seen by the VM!
 
 Some architectures directly provide a clock register inside the
 CPU. However, a board usually needs extended time control through
-dedicated devices. How would you implement such a device inside QEMU ?
+dedicated devices. How would you implement such a device inside QEMU?
 
 ## Time in QEMU
 
@@ -20,7 +20,7 @@ QEMU implements several `clocks` to get informed about time. Obviously
 you can still directly use host OS interface to get time information.
 
 Looking at
-[`timer.h`](https://github.com/qemu/qemu/blob/v4.2.0/include/qemu/timer.h#L16)
+[`timer.h`](https://github.com/qemu/qemu/blob/v10.0.2/include/qemu/timer.h)
 we learn that there exists 4 clock types:
 - realtime
 - host
@@ -78,109 +78,114 @@ IRQs on those timers expiration.
 So you will need both device specific hardware representation and QEMU
 internal clock model.
 
-### CPIOM tick timer
+### CLabPU tick timer
 
-Under our CPIOM example implementation this may look like the following:
+Under our CLabPU example implementation this may look like the following:
 
 ```c
-typedef struct cpiom_clock
-{
+typedef struct clabpu_clock {
     QEMUTimer *qemu_timer;
     uint32_t  *trigger;
     int64_t    restart;
     double     duration;
+} clabpu_clock_t;
 
-} cpiom_clock_t;
-
-typedef struct cpiom_timer_device_state
-{
+typedef struct CLabPUTimerState {
     /*< private >*/
-    SysBusDevice      parent_obj;
+    SysBusDevice parent_obj;
 
     /*< public >*/
-    MemoryRegion      iomem;
-    cpiom_timer_reg_t reg;
-    qemu_irq          irq;
-
-    /* internal clock management */
-    cpiom_clock_t     tick;
-
-} cpiom_timer_state_t;
-```
+    MemoryRegion iomem;
+    
+    /* Timer registers */
+    uint32_t counter;
+    uint32_t control;
+    uint32_t status;
+    uint32_t prescaler;
+    
+    qemu_irq irq;
+    clabpu_clock_t tick;
+    uint32_t frequency;     /* Timer base frequency in Hz */
+    
+} CLabPUTimerState;
 
 We have a standard `SysBusDevice` with `iomem` IO memory region and
-underlying device registers `reg`. It also declares a `cpiom_clock`
-called `tick`. The real CPIOM timers are actually more complex, but
-for the sake of simplicity here we will only consider a `tick` timer.
+individual device register fields (counter, control, status, prescaler). 
+It also declares a `clabpu_clock` called `tick`.
 
 ```c
-static void cpiom_timer_init(Object *obj)
+static void clabpu_init_timer(CLabPUState *clabpu)
 {
-    cpiom_timer_state_t *tm  = CPIOM_TIMERS(obj);
-    SysBusDevice        *dev = SYS_BUS_DEVICE(obj);
+    DeviceState *dev;
+    SysBusDevice *sbd;
+    
+    dev = qdev_new(TYPE_CLABPU_TIMER);
+    sbd = SYS_BUS_DEVICE(dev);
 
-    memory_region_init_io(&tm->iomem, obj, &cpiom_timer_reg_ops, tm,
-                          CPIOM_TIMERS_NAME"-reg", CPIOM_MMAP_TIMERS_SIZE);
-    sysbus_init_mmio(dev, tm->iomem);
-    sysbus_init_irq(dev, &tm->irq);
-
-    tm->tick.qemu_timer = timer_new_ns(QEMU_CLOCK_VIRTUAL, tick_expired, tm);
-    tm->tick.trigger    = &tm->reg.base.tick;
-...
+    object_property_set_int(OBJECT(dev), "frequency", 1000000, &error_abort);
+    object_property_add_child(OBJECT(clabpu), "timer", OBJECT(dev));
+    
+    sysbus_realize_and_unref(sbd, &error_fatal);
+    sysbus_mmio_map(sbd, 0, clabpu_memmap[CLABPU_TIMER_ADDR].base);
+    
+    sysbus_connect_irq(sbd, 0,
+                       qdev_get_gpio_in(clabpu->intc, CLABPU_IRQ_TIMER));
+    
+    clabpu->timer = dev;
 }
 ```
 
-We actually setup a device whose any access to `tm->iomem` will update
-`tm->reg` thanks to the `cpiom_timer_reg_ops`
-[`MemoryRegionOps`](https://github.com/qemu/qemu/blob/v4.2.0/include/exec/memory.h#L144). In
+We actually setup a device whose any access to `s->iomem` will update
+the device registers thanks to the `clabpu_timer_ops`
+[`MemoryRegionOps`](https://github.com/qemu/qemu/blob/v10.0.2/include/exec/memory.h#L274). In
 the meantime, a nano second `virtual clock` timer is created to call
 `tick_expired`.
 
+### Accessing the CLabPU tick timer
 
-### Accessing the CPIOM tick timer
-
-Let's say offset `0x0c` is a `R/W 32 bits TIME_COUNTER` register for
+Let's say offset `0x00` is a `R/W 32 bits TIME_COUNTER` register for
 our imaginary timer device. The counter is decremented at a given
 frequency (usually adjustable via a scale register). When it reaches
 0, it raises an IRQ.
 
-Eventually an OS driver running on our CPIOM board, and trying to
+Eventually an OS driver running on our CLabPU board, and trying to
 setup the timer device, will happen to write to this register.
 
 A candidate implementation would be:
 
 ```c
-static const MemoryRegionOps cpiom_timer_reg_ops = {
-    .read  = cpiom_timer_reg_read,
-    .write = cpiom_timer_reg_write,
-    .endianness = DEVICE_NATIVE_ENDIAN,
+static const MemoryRegionOps clabpu_timer_ops = {
+    .read = clabpu_timer_read,
+    .write = clabpu_timer_write,
+    .endianness = DEVICE_LITTLE_ENDIAN,
+    ...
 };
 
-static void cpiom_timer_reg_write(void *opaque, hwaddr addr, uint64_t data, unsigned size)
+static void clabpu_timer_write(void *opaque, hwaddr addr, uint64_t data, unsigned size)
 {
 ....
-    cpiom_timer_state_t *tm = (cpiom_timer_state_t*)opaque;
+    CLabPUTimerState *s = CLABPU_TIMER(opaque);
 
-    if (addr == 0x0c)
-        write_counter(tm, data);
+    if (addr == CLABPU_TIMER_COUNTER)
+        write_counter(s, data);
 ....
 }
 
-static void write_counter(cpiom_timer_state_t *tm, uint32_t new)
+static void write_counter(CLabPUTimerState *s, uint32_t new)
 {
-    if (!timer_is_active(tm))
+    if (!(s->control & CLABPU_TIMER_CTRL_ENABLE))
         return;
 
     if (new == 0)
-        tick_expired((void*)tm);
+        tick_expired((void*)s);
     else
-        clock_setup(tm, &tm->tick, new);
+        clock_setup(s, &s->tick, new);
 }
 
 static void tick_expired(void *opaque)
 {
-    cpiom_timer_state_t *tm = (cpiom_timer_state_t*)opaque;
-    qemu_irq_raise(tm->irq);
+    CLabPUTimerState *s = (CLabPUTimerState *)opaque;
+    qemu_irq_raise(s->irq);
 }
 ```
 
@@ -195,13 +200,13 @@ expected `virtual` clock time.
 Interestingly, the `clock_setup` might look like:
 
 ```c
-static void clock_setup(cpiom_timer_state_t *tm, cpiom_clock_t *clk, uint32_t count)
+static void clock_setup(CLabPUTimerState *s, clabpu_clock_t *clk, uint32_t count)
 {
     clk->duration = nsperiod * count;
     clk->restart  = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
 
     uint64_t expire = clk->restart + (int64_t)floor(clk->duration);
-    timer_mod(clk->qemu_timer, expire /* +/- speed factor */);
+    timer_mod_ns(clk->qemu_timer, expire /* +/- speed factor */);
 }
 ```
 
@@ -210,7 +215,7 @@ counter value and the timer frequency (expressed as `nsperiod`). This
 period might be computed as follows:
 
 ```c
-    nsperiod = (1/TIMER_FREQ_MHZ) * 1000 * scale;
+    nsperiod = (1000000000.0 / s->frequency) * prescaler;
 ```
 
 Notice that we can also induce a *speed factor* effect to the
@@ -228,3 +233,7 @@ appropriate value. Something like:
     count        = (now - clk->restart)/nsperiod;
     clk->restart = now;
 ```
+
+## Note
+
+As we go much further, we will not show the full code of the CLabPU. You can try implementing them by yourself, or see the git commit history of the [qemu-internals](https://github.com/pkucnc/qemu_internals).
