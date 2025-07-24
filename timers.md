@@ -108,6 +108,7 @@ typedef struct CLabPUTimerState {
     uint32_t frequency;     /* Timer base frequency in Hz */
     
 } CLabPUTimerState;
+```
 
 We have a standard `SysBusDevice` with `iomem` IO memory region and
 individual device register fields (counter, control, status, prescaler). 
