@@ -1,42 +1,72 @@
 ---
 layout: default
-title: Exec
+title: 05 Exec and Accelerators
 ---
 
-# A deep dive into QEMU: The execution loop
+# A deep dive into QEMU: The execution loop and accelerators
 
-This is the beginning of the second part of the blog post series. We
-will go deeper into QEMU internals this time to give insights to hack
-into core components. Let's look at the virtual CPU execution loop.
-
+We will go deeper into QEMU internals this time to give insights to hack
+into core components. Let's look at the virtual CPU execution loop and its 
+accelerators.
 
 ## The Big picture
 
 In the very [first blog post](README.md) we explained how
 accelerators were started, through
-[`qemu_init_vcpu()`](https://github.com/qemu/qemu/tree/v4.2.0/cpus.c#L2134). Suppose
-we run QEMU with a single threaded TCG and no hardware assisted
-virtualization backend, we will end up running our virtual CPU in a
-dedicated thread:
+[`qemu_init_vcpu()`](https://github.com/qemu/qemu/tree/v4.2.0/cpus.c#L2134). 
+
+In real code, each accelerator a `AccelOpsClass` structure which
+contains function pointers to the accelerator specific code:
+```c
+struct AccelOpsClass {
+    ...
+    void (*ops_init)(AccelOpsClass *ops);
+
+    bool (*cpus_are_resettable)(void);
+    void (*cpu_reset_hold)(CPUState *cpu);
+
+    void (*create_vcpu_thread)(CPUState *cpu); /* MANDATORY NON-NULL */
+    void (*kick_vcpu_thread)(CPUState *cpu);
+    bool (*cpu_thread_is_idle)(CPUState *cpu);
+    ...
+};
+```
+
+Then, in `qemu_init_vcpu()` we call the accelerator specific `qemu_tcg_init_vcpu()`. For example, if mttcg not enabled, the TCG accelerator registers its
+`create_vcpu_thread` function pointer to [`rr_start_vcpu_thread()`]((https://github.com/qemu/qemu/tree/v10.0.2/accel/tcg/tcg-accel-ops-rr.c#L308)):
 
 ```c
-static void qemu_tcg_init_vcpu(CPUState *cpu)
+void qemu_init_vcpu(CPUState *cpu)
 {
-...
-    qemu_thread_create(cpu->thread, thread_name,
-                       qemu_tcg_rr_cpu_thread_fn,
-                       cpu, QEMU_THREAD_JOINABLE);
-...
+    MachineState *ms = MACHINE(qdev_get_machine());
+    ...
+    /* accelerators all implement the AccelOpsClass */
+    g_assert(cpus_accel != NULL && cpus_accel->create_vcpu_thread != NULL);
+    cpus_accel->create_vcpu_thread(cpu);
+    ...
 }
 
-static void *qemu_tcg_rr_cpu_thread_fn(void *arg)
+void rr_start_vcpu_thread(CPUState *cpu)
+{
+    char thread_name[VCPU_THREAD_NAME_SIZE];
+    ...
+    if (!single_tcg_cpu_thread) {
+        ...
+        qemu_thread_create(cpu->thread, thread_name,
+                           rr_cpu_thread_fn,
+                           cpu, QEMU_THREAD_JOINABLE);
+    } 
+    ...
+}
+
+static void *rr_cpu_thread_fn(void *arg)
 {
 ...
     while (1) {
-        while (cpu && !cpu->queued_work_first && !cpu->exit_request) {
-
+        while (cpu && cpu_work_list_empty(cpu) && !cpu->exit_request) {
+            ...
             qemu_clock_enable(QEMU_CLOCK_VIRTUAL, ...);
-            
+            ...
             if (cpu_can_run(cpu)) {
                 r = tcg_cpu_exec(cpu);
 
@@ -68,30 +98,23 @@ handling in a dedicated post.
 ## Entering the TCG execution loop
 
 The interesting function to start with is
-[`tcg_cpu_exec`](https://github.com/qemu/qemu/tree/v4.2.0/cpus.c#L1461)
+[`tcg_cpu_exec`](https://github.com/qemu/qemu/tree/v10.0.2/accel/tcg/tcg-accel-ops.c#L75)
 and more specifically the
-[`cpu_exec`](https://github.com/qemu/qemu/blob/v4.2.0/accel/tcg/cpu-exec.c#L661)
-one. We will cover (definitely) in a future blog post the internals of
+[`cpu_exec`](https://github.com/qemu/qemu/blob/v10.0.2/accel/tcg/cpu-exec.c#1036)
+one. We will cover in a future blog post the internals of
 the TCG engine, but for now we only give an overview of the VM
 execution. Simplified, it looks like:
 
 ```c
 int cpu_exec(CPUState *cpu)
 {
-    cc->cpu_exec_enter(cpu);
-
-    /* prepare setjmp context for exception handling */
-    sigsetjmp(cpu->jmp_env, 0);
-
-    /* if an exception is pending, we execute it here */
-    while (!cpu_handle_exception(cpu, &ret)) {
-        while (!cpu_handle_interrupt(cpu, &last_tb)) {
-            tb = tb_find(cpu, last_tb, tb_exit, cflags);
-            cpu_loop_exec_tb(cpu, tb, &last_tb, &tb_exit);
-        }
-    }
-
-    cc->cpu_exec_exit(cpu);
+    SyncClocks sc = { 0 };
+    ...
+    cpu_exec_enter(cpu);
+    ...
+    ret = cpu_exec_setjmp(cpu, &sc);
+    cpu_exec_exit(cpu);
+    return ret;
 }
 ```
 
@@ -100,13 +123,15 @@ exception handling. This allows to get out of deep and complex TCG
 translation functions whenever an event has been triggered, such as a
 CPU interrupt or exception. The corresponding functions to exit the
 CPU execution loop are
-[`cpu_loop_exit_xxx`](https://github.com/qemu/qemu/blob/v4.2.0/accel/tcg/cpu-exec-common.c#L65):
+[`cpu_loop_exit_xxx`](https://github.com/qemu/qemu/blob/v4.2.0/accel/tcg/cpu-exec-common.c#L76):
 
 ```c
 void cpu_loop_exit(CPUState *cpu)
 {
     /* Undo the setting in cpu_tb_exec.  */
-    cpu->can_do_io = 1;
+    cpu->neg.can_do_io = true;
+    /* Undo any setting in generated code.  */
+    qemu_plugin_disable_mem_helpers(cpu);
     siglongjmp(cpu->jmp_env, 1);
 }
 ```
@@ -130,36 +155,50 @@ done in two steps:
 - from IR to host ISA
 
 QEMU first tries to look for existing TBs, with
-[`tb_find`](https://github.com/qemu/qemu/blob/v4.2.0/accel/tcg/cpu-exec.c#L395). If
+[`tb_lookup`](https://github.com/qemu/qemu/blob/v10.0.2/accel/tcg/cpu-exec.c#L233). If
 no one exists for the current location, it generates a new one with
-[`tb_gen_code`](https://github.com/qemu/qemu/blob/v4.2.0/accel/tcg/translate-all.c#L1664):
+[`tb_gen_code`](https://github.com/qemu/qemu/blob/v10.0.2/accel/tcg/translate-all.c#L290):
 
 ```c
-static inline TranslationBlock *tb_find(CPUState *cpu,
-                                        TranslationBlock *last_tb,
-                                        int tb_exit, uint32_t cf_mask)
+static int cpu_exec_loop(CPUState *cpu, SyncClocks *sc)
 {
-...
-    tb = tb_lookup__cpu_state(cpu, &pc, &cs_base, &flags, cf_mask);
+    ...
+    tb = tb_lookup(cpu, pc, cs_base, flags, cflags);
     if (tb == NULL) {
-        tb = tb_gen_code(cpu, pc, cs_base, flags, cf_mask);
-...
+        ...
+        tb = tb_gen_code(cpu, pc, cs_base, flags, cflags);
+        ...
+    }
+    ...
 }
 ```
 
 When a TB is available, QEMU runs it with
-[`cpu_loop_exec_tb`](https://github.com/qemu/qemu/blob/v4.2.0/accel/tcg/cpu-exec.c#L611)
+[`cpu_loop_exec_tb`](https://github.com/qemu/qemu/blob/v10.0.2/accel/tcg/cpu-exec.c#L897)
 which in short calls
-[`cpu_tb_exec`](https://github.com/qemu/qemu/blob/v4.2.0/accel/tcg/cpu-exec.c#L141)
+[`cpu_tb_exec`](https://github.com/qemu/qemu/blob/v10.0.2/accel/tcg/cpu-exec.c#L441)
 and then
-[`tcg_qemu_tb_exec`](https://github.com/qemu/qemu/blob/v4.2.0/tcg/tcg.h#L1160). At
+[`tcg_qemu_tb_exec`](https://github.com/qemu/qemu/blob/v10.0.2/tcg/tci.c#L352). At
 this point the target (VM) code has been translated to host code, QEMU
 can run it directly on the host CPU. If we look at the definition of
 this last function:
 
 ```c
-#define tcg_qemu_tb_exec(env, tb_ptr) \
-    ((uintptr_t (*)(void *, void *))tcg_ctx->code_gen_prologue)(env, tb_ptr)
+uintptr_t QEMU_DISABLE_CFI tcg_qemu_tb_exec(CPUArchState *env, const void *v_tb_ptr)
+{
+    ...
+    for (;;) {
+        ...
+        switch(opc) {
+            case INDEX_op_call:
+                {
+                    ...
+                    ffi_call(cif, func, stack, call_slots);
+                    ...
+                }
+        }
+    }
+}
 ```
 
 The translation buffer receiving generated opcodes is *casted* to a
@@ -180,30 +219,43 @@ wrappers written in C, built with QEMU for a target architecture and
 natively callable on the host architecture directly from the
 translated blocks. Again, we will cover them in details later.
 
-For instance for the PPC target (VM), the *helpers* backend to inform
+For instance for the RISC-V target (VM), the *helpers* backend to inform
 QEMU that an exception is being *raised* is located into
-[excp_helper.c](https://github.com/qemu/qemu/blob/v4.2.0/target/ppc/excp_helper.c#L972):
+[tcg-cpu.c](https://github.com/qemu/qemu/blob/v10.0.2/target/target/riscv/tcg/tcg-cpu.c#L136), defined in a `TCGCPUOps` structure:
 
 ```c
-void raise_exception(CPUPPCState *env, uint32_t exception)
-{
-    raise_exception_err_ra(env, exception, 0, 0);
-}
+static const TCGCPUOps riscv_tcg_ops = {
+    .initialize = riscv_translate_init,
+    .translate_code = riscv_translate_code, // remember this is, we will see it later
+    .synchronize_from_tb = riscv_cpu_synchronize_from_tb,
+    .restore_state_to_opc = riscv_restore_state_to_opc,
 
-void raise_exception_err_ra(CPUPPCState *env, uint32_t exception,
-                            uint32_t error_code, uintptr_t raddr)
+#ifndef CONFIG_USER_ONLY
+    .tlb_fill = riscv_cpu_tlb_fill,
+    .cpu_exec_interrupt = riscv_cpu_exec_interrupt,
+    .cpu_exec_halt = riscv_cpu_has_work,
+    .do_interrupt = riscv_cpu_do_interrupt,
+...
+#endif /* !CONFIG_USER_ONLY */
+};
+
+/* Exceptions processing helpers */
+G_NORETURN void riscv_raise_exception(CPURISCVState *env, RISCVException exception, uintptr_t pc)
 {
     CPUState *cs = env_cpu(env);
 
+    trace_riscv_exception(exception,
+                          riscv_cpu_get_trap_name(exception, false),
+                          env->pc);
+
     cs->exception_index = exception;
-    env->error_code = error_code;
-    cpu_loop_exit_restore(cs, raddr);
+    cpu_loop_exit_restore(cs, pc);
 }
 ```
 
 Notice the call to `cpu_loop_exit_restore` to get back to the main cpu
 loop execution context and enter
-[`cpu_handle_exception`](https://github.com/qemu/qemu/blob/v4.2.0/accel/tcg/cpu-exec.c#L464):
+[`cpu_handle_exception`](https://github.com/qemu/qemu/blob/v10.0.2/accel/tcg/cpu-exec.c#L951):
 
 ```c
 static inline bool cpu_handle_exception(CPUState *cpu, int *ret)
@@ -216,53 +268,21 @@ static inline bool cpu_handle_exception(CPUState *cpu, int *ret)
         }
         cpu->exception_index = -1;
         return true;
-    } else {
+    } 
 ...
-        /* deal with exception/interrupt */
-        CPUClass *cc = CPU_GET_CLASS(cpu);
-        cc->do_interrupt(cpu);
-...
-    }
 }
 ```
 
 There is once again a specific handling on *debug exceptions*, but in
 essence if there is a pending exception in `cpu->exception_index` it
-will be managed by `cc->do_interrupt` which is architecture dependent.
+will be managed by `cpu_handle_interrupt` which is architecture dependent (it will finally call `tcg_ops->cpu_exec_interrupt`).
 
 The `exception_index` field can hold the real hardware exception but
 is also used for meta information (QEMU debug event, halt instruction,
 VMEXIT for nested virtualization on x86).
 
-The `CPUClass` type has several function pointers to be initialized by
-specific target code. For an i386 target we may find it at
-[x86_cpu_common_class_init](https://github.com/qemu/qemu/blob/v4.2.0/target/i386/cpu.c#L7040):
-
-```c
-static void x86_cpu_common_class_init(ObjectClass *oc, void *data)
-{
-    X86CPUClass *xcc = X86_CPU_CLASS(oc);
-    CPUClass *cc = CPU_CLASS(oc);
-    DeviceClass *dc = DEVICE_CLASS(oc);
-...
-#ifdef CONFIG_TCG
-    cc->do_interrupt = x86_cpu_do_interrupt;
-    cc->cpu_exec_interrupt = x86_cpu_exec_interrupt;
-#endif
-    cc->dump_state = x86_cpu_dump_state;
-    cc->get_crash_info = x86_cpu_get_crash_info;
-    cc->set_pc = x86_cpu_set_pc;
-    cc->synchronize_from_tb = x86_cpu_synchronize_from_tb;
-    cc->gdb_read_register = x86_cpu_gdb_read_register;
-    cc->gdb_write_register = x86_cpu_gdb_write_register;
-    cc->get_arch_id = x86_cpu_get_arch_id;
-    cc->get_paging_enabled = x86_cpu_get_paging_enabled;
-...
-}
-```
-
 The underlying `x86_cpu_do_interrupt` is a place holder for various
 cases (userland, system emulation or nested virtualization). In basic
 system emulation mode it will call
-[`do_interrupt_all`](https://github.com/qemu/qemu/blob/v4.2.0/target/i386/seg_helper.c#L1206)
+[`do_interrupt_all`](https://github.com/qemu/qemu/blob/vv10.0.2/target/i386/seg_helper.c#L1166)
 which implements low level x86 specific interrupt handling.

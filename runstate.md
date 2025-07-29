@@ -1,6 +1,6 @@
 ---
 layout: default
-title: Runstate
+title: 07 Runstate
 ---
 
 # A deep dive into QEMU: VM running states
@@ -10,6 +10,18 @@ machine (guest) are handled internally.
 
 As you may imagine, a virtual machine and especially its virtual CPU
 goes through different running states during its lifetime:
+
+```json
+{ 'enum': 'RunState',
+  'data': [ 'debug', 'inmigrate', 'internal-error', 'io-error', 'paused',
+            'postmigrate', 'prelaunch', 'finish-migrate', 'restore-vm',
+            'running', 'save-vm', 'shutdown', 'suspended', 'watchdog',
+            'guest-panicked', 'colo' ] }
+```
+
+These states are translated to a C enumeration type
+`RunState`. If you are interested in the details, you can check the [`gen.py`](https://github.com/qemu/qemu/blob/v10.0.2/scripts/qapi/gen.py). It will generate a header `qapi/qapi-types-run-state.h`, which contains the
+C enumeration type definition:
 
 ```c
 /* from QAPI types */
@@ -36,23 +48,24 @@ typedef enum RunState {
 ```
 
 These
-[`RunState`](https://github.com/qemu/qemu/blob/v4.2.0/qapi/run-state.json)
+[`RunState`](https://github.com/qemu/qemu/blob/v10.0.2/qapi/run-state.json)
 are handled in the QEMU
-[`main_loop`](https://github.com/qemu/qemu/tree/v4.2.0/vl.c#L1801)
+[`qemu_main_loop`](https://github.com/qemu/qemu/blob/v10.0.2/system/runstate.c#L830)
 which executes in the QEMU startup thread, not the ones dedicated to
-[virtual
-CPUs](https://github.com/qemu/qemu/tree/v4.2.0/cpus.c#L2134). The
-function just wait for event requests to be processed in
-[`main_loop_should_exit`](https://github.com/qemu/qemu/tree/v4.2.0/vl.c#L1743). They
+virtual CPUs. The function just wait for event requests to be processed in
+[`main_loop_should_exit`](https://github.com/qemu/qemu/blob/v10.0.2/system/runstate.c#L771). They
 are generally raised from the virtual CPU threads:
 
 ```c
-static void main_loop(void)
+int qemu_main_loop(void)
 {
-...
-    while (!main_loop_should_exit()) {
+    int status = EXIT_SUCCESS;
+
+    while (!main_loop_should_exit(&status)) {
         main_loop_wait(false);
     }
+
+    return status;
 }
 
 static bool main_loop_should_exit(void)
@@ -76,7 +89,7 @@ static bool main_loop_should_exit(void)
 }
 ```
 
-If you remember the [breakpoints handling post](brk.md), while
+If you remember the [breakpoints handling post](brk.html), while
 handling the debug exception being raised, QEMU prepared a **debug
 request** to the main loop from
 [`cpu_handle_guest_debug`](https://github.com/qemu/qemu/tree/v4.2.0/cpus.c#L1141):

@@ -26,17 +26,24 @@ foremost how to hack into it for fun and profit.
 We won't explain usage and other things that can be found in the
 official documentation. The following topics will be addressed:
 
+QEMU Internals:
 - [Creating a new machine](machine.html)
 - [Controlling memory regions](regions.html)
 - [Creating interrupts controller and new devices](devices.html)
 - [Timers](timers.html)
-- [PCI controller](pci.html)
-- [PCI devices](pci_slave.html)
-- [Options](options.html)
-- [Execution loop](exec.html)
+- [Execution loop and accelerators](exec.html)
 - [Breakpoints handling](brk.html)
 - [VM running states](runstate.html)
-- [Snapshots](snapshot.html)
+
+TCG Topics:
+- [TCG: IR generation](tcg_ir.html)
+- [TCG: Host code generation](tcg_host.html)
+- [TCG: Memory Operations](tcg_mem.html)
+
+PCIe Topics:
+- [PCIe: an overview](pcie.html)
+- [PCIe: controller emulation](pcie_controller.html)
+- [PCIe: device emulation](pcie_device.html)
 
 The official code and documentation can be found here:
 
@@ -145,7 +152,7 @@ Under an x86-64 Linux host, we found the following accelerators:
 
 ```
 $ qemu-system-x86_64 -accel ?
-Possible accelerators: kvm, xen, hax, tcg
+Possible accelerators: kvm, xen, tcg
 ```
 
 While on an x86-64 MacOS host:
@@ -156,7 +163,7 @@ Possible accelerators: tcg, hax, hvf
 ```
 
 The supported accelerators can be found in
-[`qemu_init_vcpu()`](https://github.com/qemu/qemu/tree/v4.2.0/cpus.c#L2134):
+[`qemu_init_vcpu() in qemu v4.2.0`](https://github.com/qemu/qemu/tree/v4.2.0/cpus.c#L2134). QEMU has refactored the following code to make it easier to add new accelerators, but we still take the v4.2.0 code as an example:
 
 ```c
 void qemu_init_vcpu(CPUState *cpu)
@@ -164,8 +171,6 @@ void qemu_init_vcpu(CPUState *cpu)
 ...
     if (kvm_enabled()) {
         qemu_kvm_start_vcpu(cpu);
-    } else if (hax_enabled()) {
-        qemu_hax_start_vcpu(cpu);
     } else if (hvf_enabled()) {
         qemu_hvf_start_vcpu(cpu);
     } else if (tcg_enabled()) {
@@ -183,14 +188,12 @@ To make it short:
 
 - `kvm` is the *Linux Kernel-based Virtual Machine* accelerator;
 - `hvf` is the MacOS *Hypervisor.framework* accelerator;
-- `hax` is the cross-platform Intel HAXM accelerator;
 - `whp` is the *Windows Hypervisor Platform* accelerator.
 
 You can take benefit of the speed of x86 hardware virtualization under
 the three major operating systems. Notice that the TCG is also
 considered an accelerator. We can enter a long debate about
 terminology here ...
-
 
 ## QEMU APIs
 

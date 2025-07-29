@@ -1,9 +1,9 @@
 ---
 layout: default
-title: Pci
+title: 05 Add PCIe Root Complex
 ---
 
-# A deep dive into QEMU: PCI host bridge controller
+# A deep dive into QEMU: PCIe, the master side
 
 The QEMU PCI subsystem is really interesting to understand. Because
 PCI is a [specification](https://pcisig.com/specifications), QEMU
