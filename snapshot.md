@@ -1,8 +1,3 @@
----
-layout: default
-title: 08 VM Snapshotting
----
-
 # A deep dive into QEMU: snapshot API
 
 This blog post gives some insights on the QEMU snapshot API.

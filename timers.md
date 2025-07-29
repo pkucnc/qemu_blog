@@ -1,8 +1,3 @@
----
-layout: default
-title: 04 Timers
----
-
 # A deep dive into QEMU: a Brief History of Time
 
 Ever wanted to play with general relativity? QEMU is a simulation

@@ -1,8 +1,3 @@
----
-layout: default
-title: 05 Exec and Accelerators
----
-
 # A deep dive into QEMU: The execution loop and accelerators
 
 We will go deeper into QEMU internals this time to give insights to hack

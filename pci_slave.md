@@ -1,7 +1,3 @@
----
-layout: default
-title: Pci Slave
----
 
 # A deep dive into QEMU: PCI slave devices
 

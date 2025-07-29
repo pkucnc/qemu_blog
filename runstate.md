@@ -1,8 +1,3 @@
----
-layout: default
-title: 07 Runstate
----
-
 # A deep dive into QEMU: VM running states
 
 This blog post details how the different running states of the virtual

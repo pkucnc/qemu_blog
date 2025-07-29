@@ -26,3 +26,7 @@ The official code and documentation can be found here:
 
 - https://github.com/qemu/qemu
 - https://www.qemu.org/documentation/
+
+The code we modified for this lecture series is available at https://github.com/pkucnc/qemu_internals
+
+If you find any bugs, please feel free to open an issue or submit a pull request.

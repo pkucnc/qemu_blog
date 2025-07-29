@@ -1,8 +1,3 @@
----
-layout: default
-title: 10.2 PCIe controller emulation
----
-
 # A deep dive into QEMU: PCIe, the master side
 
 The QEMU PCI subsystem is really interesting to understand. Because

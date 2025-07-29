@@ -1,8 +1,3 @@
----
-layout: default
-title: 01 Create a new machine
----
-
 # A deep dive into QEMU: a new machine
 
 In this post, we will see how to create a new machine. Opportunity is

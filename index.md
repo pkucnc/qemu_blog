@@ -1,8 +1,3 @@
----
-layout: default
-title: 00 Introduction
----
-
 # CLab QEMU Internals
 
 This lecture series is adopted from the [QEMU Internals](https://airbus-seclab.github.io/qemu_blog/) blog posts published by Airbus Security Lab. Compared to the original posts, we changed the target architecture to `riscv64`, rebase qemu to 10.0.2, specifically designed for PKU CLab kernel group. You can find the original posts [here](https://airbus-seclab.github.io/qemu_blog/).
@@ -37,19 +32,21 @@ QEMU Internals:
 - [08 VM Snapshotting](snapshot.html)
 
 TCG Topics:
-- [09.1 TCG IR generation](tcg_ir.html)
-- [09.2 TCG Host code generation](tcg_host.html)
-- [09.3 TCG Memory Operations](tcg_mem.html)
+- [01 TCG IR generation](tcg_ir.html)
+- [02 TCG Host code generation](tcg_host.html)
+- [03 TCG Memory Operations](tcg_mem.html)
 
 PCIe Topics:
-- [10.1 PCIe overview](pcie.html)
-- [10.2 PCIe controller emulation](pcie_controller.html)
-- [10.3 PCIe device emulation](pcie_device.html)
+- [01 PCIe overview](pcie.html)
+- [02 PCIe controller emulation](pcie_controller.html)
+- [03 PCIe device emulation](pcie_device.html)
 
 The official code and documentation can be found here:
 
 - https://github.com/qemu/qemu
 - https://www.qemu.org/documentation/
+
+The code we modified for this lecture series is available at https://github.com/pkucnc/qemu_internals
 
 # Terminology
 
@@ -61,14 +58,14 @@ on. Usually an x86 machine.
 The target is the architecture which is emulated by QEMU. You can
 choose at build time which one you want:
 
-```
+```bash
 ./configure --target-list=riscv64-softmmu,x86_64-softmmu ...
 ```
 
 As such, in the source code organisation you will find all supported
 architectures in the `target/` directory:
 
-```
+```bash
 (qemu-git) ll target
 drwxrwxr-x  2 xxx xxx 4.0K  alpha/
 drwxrwxr-x  4 xxx xxx 4.0K  arm/
@@ -93,7 +90,7 @@ drwxrwxr-x 12 xxx xxx 4.0K  xtensa/
 
 The `qemu-system-<target>` binaries are built into their respective `<target>-softmmu` directory:
 
-```
+```bash
 (qemu-git) ls -ld *-softmmu
 drwxr-xr-x  9 xxx xxx 4096 i386-softmmu
 drwxrwxr-x 11 xxx xxx 4096 ppc-softmmu
@@ -151,14 +148,14 @@ system must allow QEMU to take benefit of them.
 
 Under an x86-64 Linux host, we found the following accelerators:
 
-```
+```bash
 $ qemu-system-x86_64 -accel ?
 Possible accelerators: kvm, xen, tcg
 ```
 
 While on an x86-64 MacOS host:
 
-```
+```bash
 $ qemu-system-x86_64 -accel ?
 Possible accelerators: tcg, hax, hvf
 ```

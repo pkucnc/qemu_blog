@@ -1,8 +1,3 @@
----
-layout: default
-title: 03 devices and interrupts
----
-
 # A deep dive into QEMU: adding devices and interrupts
 
 In this post, we will see how to create new devices and interrupt controllers. Other

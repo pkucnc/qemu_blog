@@ -1,8 +1,3 @@
----
-layout: default
-title: 09.1 TCG IR generation
----
-
 # A deep dive into QEMU: The Tiny Code Generator (TCG), part 1, IR generation
 
 This blog post details some internals of the QEMU TCG engine, the

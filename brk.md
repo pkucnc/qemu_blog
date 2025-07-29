@@ -1,8 +1,3 @@
----
-layout: default
-title: 06 Breakpoints handling
----
-
 # A deep dive into QEMU: Breakpoints handling
 
 In this post we will learn how breakpoints are checked and raised
