@@ -301,7 +301,7 @@ void my_user_timeout_cb(void *opaque)
 
 And in your vm change state handler, **asynchronously** deal with that
 state thanks to
-[`async_run_on_cpu`](https://github.com/qemu/qemu/tree/v10.0.2/cpus-common.c#L168):
+[`async_run_on_cpu`](https://github.com/qemu/qemu/blob/v10.0.2/cpu-common.c#L168):
 
 ```c
 void my_vm_state_change(void *opaque, int running, RunState state)
@@ -317,9 +317,9 @@ void my_vm_state_change(void *opaque, int running, RunState state)
 
 This way, the `my_async_timeout_vm` function is added into the given
 `cpu` work queue as a new
-[`qemu_work_item`](https://github.com/qemu/qemu/tree/v10.0.2/cpus-common.c#L126)
+[`qemu_work_item`](https://github.com/qemu/qemu/blob/v10.0.2/cpu-common.c#L126)
 and will be called out of the main loop context. It is safe to
 consider your VM in the requested state (PAUSED) now and try to resume
 it with
-[`vm_start`](https://github.com/qemu/qemu/tree/v10.0.2/system/cpus.c#L776)
+[`vm_start`](https://github.com/qemu/qemu/blob/v10.0.2/system/cpus.c#L776)
 for instance.
