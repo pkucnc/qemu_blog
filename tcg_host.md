@@ -1,6 +1,6 @@
 # A deep dive into QEMU: The Tiny Code Generator (TCG), part 2
 
-This blog post is the second [part](tcg_p1.md) dedicated to the QEMU
+This blog post is the second [part](tcg_ir.md) dedicated to the QEMU
 TCG engine. It covers TCG IR to host code translation and TBs
 execution.
 
@@ -197,7 +197,7 @@ how does QEMU knows that it should translate the PowerPC `mtmsr`
 instruction into a call to the `helper_store_msr` TCG helper ?
 
 We already explained how guest instructions are [first
-translated](tcg_p1.md#translating-instructions) into
+translated](tcg_ir.md#translating-instructions) into
 IR. The `opcodes` table has also an entry for our PowerPC system
 instruction `mtmsr`:
 
@@ -244,7 +244,7 @@ static void gen_mtmsr(DisasContext *ctx)
 ```
 
 If you remember our [previous
-articles](tcg_p1.md#example-powerpc-basic-block-translation) example
+articles](tcg_ir.md#example-powerpc-basic-block-translation) example
 PowerPC basic block, you will find the IR opcodes related to
 `gen_update_nip`, `tcg_gen_mov_tl` and `gen_helper_store_msr`:
 
@@ -300,7 +300,7 @@ To be able to simulate *system* instructions, QEMU introduced the
 *helper* concept which allows programmers to implement their emulation
 inside the QEMU engine.
 
-We will see in the [next blog post](tcg_p3.md) that the QEMU helpers
+We will see in the [next blog post](tcg_mem.md) that the QEMU helpers
 are largely used to implement guest memory accesses with the support
 of virtual TLBs. They are also used for dealing with exceptions. The
 interested reader can have a look at

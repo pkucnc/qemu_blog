@@ -28,7 +28,7 @@ struct AccelOpsClass {
 ```
 
 Then, in `qemu_init_vcpu()` we call the accelerator specific `qemu_tcg_init_vcpu()`. For example, if mttcg not enabled, the TCG accelerator registers its
-`create_vcpu_thread` function pointer to [`rr_start_vcpu_thread()`]((https://github.com/qemu/qemu/tree/v10.0.2/accel/tcg/tcg-accel-ops-rr.c#L308)):
+`create_vcpu_thread` function pointer to [`rr_start_vcpu_thread()`](https://github.com/qemu/qemu/tree/v10.0.2/accel/tcg/tcg-accel-ops-rr.c#L308):
 
 ```c
 void qemu_init_vcpu(CPUState *cpu)

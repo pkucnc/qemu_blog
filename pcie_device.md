@@ -1,7 +1,7 @@
 
 # A deep dive into QEMU: PCI slave devices
 
-In the first [PCI article](pci.md) we covered the host bridge
+In the first [PCI article](pcie_controller.md) we covered the host bridge
 part. Now that we have a clear overview of the QEMU PCI subsystem,
 let's have a look at how PCI devices really work.
 

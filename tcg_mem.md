@@ -84,7 +84,7 @@ because it breaks down into all signed, unsigned and extended variant
 of the store operation which is of no interest to us.
 
 The `GEN_OPCODE` macro will expand to the declaration, if you remember
-our [TCG article](tcg_p2.md#tcg-helpers), of the
+our [TCG article](tcg_host.md#tcg-helpers), of the
 [`gen_stw`](https://github.com/qemu/qemu/blob/v4.2.0/target/ppc/translate.c#L2717)
 handler. We can't find its direct definition in the QEMU source code,
 as for TCG *helpers*, it is partly generated at compilation time:
@@ -146,7 +146,7 @@ From that point, we have an IR qemu_st_i32 opcode which is emitted.
 ### Translating IR `qemu_st_i32` into Intel x86_64 for execution
 
 We won't explain host code generation again, read the [dedicated blog
-post](tcg_p2.md). Once the execution loop reaches
+post](tcg_host.md). Once the execution loop reaches
 [`tcg_gen_code`](https://github.com/qemu/qemu/blob/v4.2.0/tcg/tcg.c#L4013)
 and more specifically
 [`tcg_reg_alloc_op`](https://github.com/qemu/qemu/blob/v4.2.0/tcg/tcg.c#L3575),
