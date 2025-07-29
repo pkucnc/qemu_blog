@@ -1,15 +1,15 @@
 ---
 layout: default
-title: Tcg P1
+title: 07.1 TCG IR generation
 ---
 
-# A deep dive into QEMU: The Tiny Code Generator (TCG), part 1
+# A deep dive into QEMU: The Tiny Code Generator (TCG), part 1, IR generation
 
 This blog post details some internals of the QEMU TCG engine, the
 machinery responsible for executing target instructions on the host.
 
-You should have already read [Execution loop](exec.md) and
-[Breakpoints handling](brk.md) blog posts to have some pointers.
+You should have already read [Execution loop](exec.html) and
+[Breakpoints handling](brk.html) blog posts to have some pointers.
 
 
 ## Be kind rewind

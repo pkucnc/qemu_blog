@@ -1,6 +1,6 @@
 ---
 layout: default
-title: Snapshot
+title: 07 VM Snapshotting
 ---
 
 # A deep dive into QEMU: snapshot API
@@ -18,37 +18,34 @@ restorable state of your virtual machine including its vCPU, RAM and
 devices.
 
 If we look at the service involved internally when invoking the
-[`savevm`](https://github.com/qemu/qemu/tree/v4.2.0/monitor/hmp-cmds.c)
+[`hmp_savevm`](https://github.com/qemu/qemu/blob/v10.0.2/migration/migration-hmp-cmds.c#L384)
 command we will land in
-[`save_snapshot`](https://github.com/qemu/qemu/tree/v4.2.0/migration/savevm.c#L2619):
+[`save_snapshot`](https://github.com/qemu/qemu/tree/v10.0.2/migration/savevm.c#L3219):
 
 ```c
 void hmp_savevm(Monitor *mon, const QDict *qdict)
 {
     Error *err = NULL;
 
-    save_snapshot(qdict_get_try_str(qdict, "name"), &err);
-    hmp_handle_error(mon, &err);
+    save_snapshot(qdict_get_try_str(qdict, "name"), true, NULL, false, NULL, &err);
+    hmp_handle_error(mon, err);
 }
 
-
-int save_snapshot(const char *name, Error **errp)
+bool save_snapshot(const char *name, bool overwrite, const char *vmstate,
+                  bool has_devices, strList *devices, Error **errp)
 {
 ...
-    if (!bdrv_all_can_snapshot(&bs)) {
-        error_setg(errp, "Device '%s' is writable but does not support "
-                   "snapshots", bdrv_get_device_name(bs));
-        return ret;
+    if (!bdrv_all_can_snapshot(has_devices, devices, errp)) {
+        return false;
     }
 
 ...
-    ret = global_state_store();
-    if (ret) {
-        error_setg(errp, "Error saving global state");
-        return ret;
+    bs = bdrv_all_find_vmstate_bs(vmstate, has_devices, devices, errp);
+    if (bs == NULL) {
+        return false;
     }
+    global_state_store();
     vm_stop(RUN_STATE_SAVE_VM);
-
 ...
     f = qemu_fopen_bdrv(bs, 1);
     if (!f) {
@@ -56,39 +53,37 @@ int save_snapshot(const char *name, Error **errp)
         goto the_end;
     }
     ret = qemu_savevm_state(f, errp);
-    vm_state_size = qemu_ftell(f);
-    qemu_fclose(f);
-    if (ret < 0) {
+    vm_state_size = qemu_file_transferred(f);
+    ret2 = qemu_fclose(f);
+    if (ret2 < 0) {
         goto the_end;
     }
 
 ...
-    if (saved_vm_running) {
-        vm_start();
-    }
+    vm_resume(saved_state);
+...
 }
 ```
 
 A lot of interesting things there. First the snapshot API is a file
 based API. Second, your board' block devices (if any) must be
-*snapshotable*. Third, there exists special [running
-states](runstate.md) related to snapshoting.
+*snapshotable*. Third, there exists special [running states](runstate.md) related to snapshoting.
 
 The block device *snapshot-ability* is specific and mainly related to
 device read-only mode. However, the most important part of the
-[`save_snapshot`](https://github.com/qemu/qemu/tree/v4.2.0/migration/savevm.c#L2619)
+[`save_snapshot`](https://github.com/qemu/qemu/tree/v10.0.2/migration/savevm.c#L3219):
 function is tied to
-[`qemu_savevm_state`](https://github.com/qemu/qemu/tree/v4.2.0/migration/savevm.c#L1501)
+[`qemu_savevm_state`](https://github.com/qemu/qemu/tree/v10.0.2/migration/savevm.c#L1742)
 which will proceed through every device
-[`VMStateDescription`](https://github.com/qemu/qemu/tree/v4.2.0/include/migration/vmstate.h#L176)
+[`VMStateDescription`](https://github.com/qemu/qemu/tree/v10.0.2/include/migration/vmstate.h#L184)
 thanks to
-[`vmstate_save_state_v`](https://github.com/qemu/qemu/tree/v4.2.0/migration/vmstate.c#L323)
+[`vmstate_save_state_v`](https://github.com/qemu/qemu/tree/v10.0.2/migration/vmstate.c#L398)
 
 
 ## Preparing your devices
 
 To be snapshotable, a device must expose through a
-[`VMStateDescription`](https://github.com/qemu/qemu/tree/v4.2.0/include/migration/vmstate.h#L176),
+[`VMStateDescription`](https://github.com/qemu/qemu/tree/v10.0.2/include/migration/vmstate.h#L184)
 all of its internal state fields that must be saved and restored
 during snapshot handling.
 
@@ -96,40 +91,34 @@ Obviously, it's a device based implementation. Usually, configured IO
 registers are saved to preserve what drivers may have done during
 initialisation.
 
-Let's take an example based on [our timer device](timers.md) implementation:
+Let's take an example based on [our timer device](timers.html) implementation:
 
 ```c
-static const VMStateDescription vmstate_cpiom_timer = {
-    .name = CPIOM_TIMERS_NAME,
+static const VMStateDescription vmstate_clabpu_timer = {
+    .name = "clabpu-timer",
     .version_id = 1,
     .minimum_version_id = 1,
-    .post_load = cpiom_timer_post_load,
-    .fields = (VMStateField[]) {
-        VMSTATE_UINT32(reg.base.ctrl, cpiom_timer_state_t),
-        VMSTATE_UINT32(reg.base.prescal, cpiom_timer_state_t),
-        VMSTATE_UINT32(reg.base.period, cpiom_timer_state_t),
-        VMSTATE_UINT32(reg.base.counter, cpiom_timer_state_t),
-        VMSTATE_UINT32(reg.base.cycle, cpiom_timer_state_t),
-        VMSTATE_UINT32(reg.base.slice_end, cpiom_timer_state_t),
-        VMSTATE_UINT32(reg.base.slice_out, cpiom_timer_state_t),
-        VMSTATE_UINT32(reg.base.tick, cpiom_timer_state_t),
-        VMSTATE_UINT32(reg.base.win_begin, cpiom_timer_state_t),
-        VMSTATE_UINT32(reg.base.win_end, cpiom_timer_state_t),
-        VMSTATE_UINT32(reg.base.win_sts, cpiom_timer_state_t),
-        VMSTATE_UINT32(reg.base.win_sav_sts, cpiom_timer_state_t),
-        VMSTATE_UINT32(reg.conf.rtc_period, cpiom_timer_state_t),
-        VMSTATE_UINT32(reg.conf.cpt_rtc, cpiom_timer_state_t),
+    .fields = (const VMStateField[]) {
+        VMSTATE_UINT32(counter, CLabPUTimerState),
+        VMSTATE_UINT32(control, CLabPUTimerState),
+        VMSTATE_UINT32(status, CLabPUTimerState),
+        VMSTATE_UINT32(prescaler, CLabPUTimerState),
+        VMSTATE_UINT32(frequency, CLabPUTimerState),
         VMSTATE_END_OF_LIST()
-    },
+    }
 };
 
-static void cpiom_timer_class_init(ObjectClass *klass, void *data)
+static void clabpu_timer_class_init(ObjectClass *klass, void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
-
-    dc->vmsd = &vmstate_cpiom_timer;
-    dc->reset = cpiom_timer_reset;
-    dc->desc = CPIOM_TIMERS_NAME;
+    
+    dc->realize = clabpu_timer_realize;
+    dc->unrealize = clabpu_timer_unrealize;
+    dc->legacy_reset = clabpu_timer_reset;
+    dc->vmsd = &vmstate_clabpu_timer;
+    device_class_set_props(dc, clabpu_timer_properties);
+    dc->desc = "CLabPU Timer";
+    set_bit(DEVICE_CATEGORY_MISC, dc->categories);
 }
 ```
 
@@ -139,18 +128,17 @@ restored during snapshots.
 
 The `vmsd` field of the `DeviceClass` is used during device
 realization by QEMU
-[`qdev`](https://github.com/qemu/qemu/tree/v4.2.0/hw/core/qdev.c#L893)
+[`qdev`](https://github.com/qemu/qemu/tree/v10.0.2/hw/core/qdev.c#L517)
 API with
-[`vmstate_register`](https://github.com/qemu/qemu/tree/v4.2.0/migration/savevm.c#L787).
-
+[`vmstate_register`](https://github.com/qemu/qemu/tree/v10.0.2/migration/savevm.c#L787).
 If you look at QEMU git tree existing devices implementation, you will
 find more complex definitions with
-[`VMSTATE_PCI_DEVICE`](https://github.com/qemu/qemu/tree/v4.2.0/include/hw/pci/pci.h#L847)
+[`VMSTATE_PCI_DEVICE`](https://github.com/qemu/qemu/tree/v10.0.2/include/hw/pci/pci_device.h#L351)
 or
-[`VMSTATE_STRUCT`](https://github.com/qemu/qemu/tree/v4.2.0/include/migration/vmstate.h#L816)
+[`VMSTATE_STRUCT`](https://github.com/qemu/qemu/tree/v10.0.2/include/migration/vmstate.h#L863)
 declarations. Devices may also inherit higher-level/generic
 `VMStateDescription` such as
-[`serial-isa`](https://github.com/qemu/qemu/tree/v4.2.0/hw/char/serial-isa.c#L85):
+[`serial-isa`](https://github.com/qemu/qemu/tree/v10.0.2/hw/char/serial-isa.c#106):
 
 ```c
 const VMStateDescription vmstate_serial = {
@@ -160,7 +148,7 @@ const VMStateDescription vmstate_serial = {
     .pre_save = serial_pre_save,
     .pre_load = serial_pre_load,
     .post_load = serial_post_load,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_UINT16_V(divider, SerialState, 2),
         VMSTATE_UINT8(rbr, SerialState),
         VMSTATE_UINT8(ier, SerialState),
@@ -173,7 +161,7 @@ const VMStateDescription vmstate_serial = {
         VMSTATE_UINT8_V(fcr_vmstate, SerialState, 3),
         VMSTATE_END_OF_LIST()
     },
-    .subsections = (const VMStateDescription*[]) {
+    .subsections = (const VMStateDescription * const []) {
         &vmstate_serial_thr_ipending,
         &vmstate_serial_tsr,
         &vmstate_serial_recv_fifo,
@@ -189,7 +177,7 @@ static const VMStateDescription vmstate_isa_serial = {
     .name = "serial",
     .version_id = 3,
     .minimum_version_id = 2,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_STRUCT(state, ISASerialState, 0, vmstate_serial, SerialState),
         VMSTATE_END_OF_LIST()
     }
@@ -199,14 +187,13 @@ static const VMStateDescription vmstate_isa_serial = {
 ## Lower level handlers
 
 The internals of the VMState save/load API is backed by
-[`SaveStateEntry`](https://github.com/qemu/qemu/tree/v4.2.0/migration/savevm.c#L233)
+[`SaveStateEntry`](https://github.com/qemu/qemu/tree/v10.0.2/migration/savevm.c#L236)
 fields. When you register a `vmsd` with
-[`vmstate_register`](https://github.com/qemu/qemu/tree/v4.2.0/migration/savevm.c#L787),
-a new [`SaveStateEntry` is
-created](https://github.com/qemu/qemu/tree/v4.2.0/migration/savevm.c#L798):
+[`vmstate_register`](https://github.com/qemu/qemu/tree/v10.0.2/migration/savevm.c#L787),
+a new [`SaveStateEntry` is created](https://github.com/qemu/qemu/tree/v10.0.2/migration/savevm.c#L908):
 
 ```c
-int vmstate_register_with_alias_id(DeviceState *dev, int instance_id,
+int vmstate_register_with_alias_id(VMStateIf *obj, uint32_t instance_id,
                                    const VMStateDescription *vmsd,
                                    void *opaque, int alias_id,
                                    int required_for_version,
@@ -226,14 +213,13 @@ int vmstate_register_with_alias_id(DeviceState *dev, int instance_id,
 ```
 
 The
-[`qemu_savevm_state`](https://github.com/qemu/qemu/tree/v4.2.0/migration/savevm.c#L1525)
+[`qemu_savevm_state`](https://github.com/qemu/qemu/tree/v10.0.2/migration/savevm.c#L1742)
 function will iterate through the list of `SaveStateEntries` and call
-their associated [`SaveVMHandlers
-*ops`](https://github.com/qemu/qemu/tree/v4.2.0/include/migration/register.h#L17)
+their associated [`SaveVMHandlers *ops`](https://github.com/qemu/qemu/tree/v10.0.2/include/migration/register.h#L24)
 respectively from
-[`qemu_savevm_state_setup`](https://github.com/qemu/qemu/tree/v4.2.0/migration/savevm.c#L1148)
+[`qemu_savevm_state_setup`](https://github.com/qemu/qemu/tree/v10.0.2/migration/savevm.c#L1345)
 and
-[`qemu_savevm_state_iterate`](https://github.com/qemu/qemu/tree/v4.2.0/migration/savevm.c#L1210).
+[`qemu_savevm_state_iterate`](https://github.com/qemu/qemu/tree/v10.0.2/migration/savevm.c#L1427).
 
 ```c
 typedef struct SaveVMHandlers {
@@ -249,11 +235,11 @@ Depending on the fact that a device has a `vmsd` or not when
 registering to the `vmstate` API or loading a snapshot file, QEMU
 might call either the `SaveVMHandlers` from the `SaveStateEntry` or
 lower level functions such as
-[`vmstate_save_state_v`](https://github.com/qemu/qemu/tree/v4.2.0/migration/vmstate.c#L323)
+[`vmstate_save_state_v`](https://github.com/qemu/qemu/tree/v10.0.2/migration/vmstate.c#L398)
 or
-[`vmstate_load_state`](https://github.com/qemu/qemu/tree/v4.2.0/migration/vmstate.c#L78)
+[`vmstate_load_state`](https://github.com/qemu/qemu/tree/v10.0.2/migration/vmstate.c#L134)
 as we can see for instance in
-[`vmstate_load`](https://github.com/qemu/qemu/tree/v4.2.0/migration//savevm.c#L851):
+[`vmstate_load`](https://github.com/qemu/qemu/tree/v10.0.2/migration/savevm.c#L966):
 
 ```c
 static int vmstate_load(QEMUFile *f, SaveStateEntry *se)
@@ -265,20 +251,19 @@ static int vmstate_load(QEMUFile *f, SaveStateEntry *se)
     return vmstate_load_state(f, se->vmsd, se->opaque, se->load_version_id);
 }
 ```
-
-## How the RAM is snapshoted ?
+## How the RAM is snapshoted?
 
 Sometimes it's hard to find your way into the QEMU code, with all that
 function pointers initialized you don't know where depending on some
 other fields value :)
 
-Using a debugger might speed-up the proces ! Let's use it to
+Using a debugger might speed-up the process! Let's use it to
 understand how RAM is snapshoted.
 
 First,
-[`memory_region_allocate_system_memory`](https://github.com/qemu/qemu/tree/v4.2.0/numa.c#L557)
+[`memory_region_init_ram`](https://github.com/qemu/qemu/tree/v10.0.2/system/memory.c#L3705)
 registers something related to a vmstate with
-[`vmstate_register_ram`]():
+[`vmstate_register_ram`](https://github.com/qemu/qemu/tree/v10.0.2/migration/savevm.c#L3512):
 
 ```c
 void vmstate_register_ram(MemoryRegion *mr, DeviceState *dev)
@@ -286,6 +271,7 @@ void vmstate_register_ram(MemoryRegion *mr, DeviceState *dev)
     qemu_ram_set_idstr(mr->ram_block,
                        memory_region_name(mr), dev);
     qemu_ram_set_migratable(mr->ram_block);
+    ram_block_add_cpr_blocker(mr->ram_block, &error_fatal);
 }
 ```
 
@@ -293,7 +279,7 @@ And ... *cool story bro' !*
 
 
 We should better try to break into
-[`qemu_savevm_state_setup`](https://github.com/qemu/qemu/tree/v4.2.0/migration//savevm.c#L1501):
+[`qemu_savevm_state_setup`](https://github.com/qemu/qemu/tree/v10.0.2/migration/savevm.c#L1345):
 
 ```shell
 Breakpoint 2, qemu_savevm_state_setup (f=0x555556bde230)
@@ -326,9 +312,8 @@ $15 = (LoadStateHandler *) 0x555555811f3f <ram_load>
 
 The RAM `SaveStateEntry` does not have any `vmsd` and its `opaque`
 field is initialized to a
-[`RAMState`](https://github.com/qemu/qemu/tree/v4.2.0/migration/ram.c#L306)
-object that will be used by the specific [`RAM
-SaveVMHandlers`](https://github.com/qemu/qemu/tree/v4.2.0/migration/ram.c#L4577).
+[`RAMState`](https://github.com/qemu/qemu/tree/v10.0.2/migration/ram.c#L336)
+object that will be used by the specific [`savevm_ram_handlers`](https://github.com/qemu/qemu/tree/v10.0.2/migration/ram.c#L4429).
 
 Now we have function names to look at `migrate/ram.c`. We won't detail
 the code from here. The interested reader might deep-dive into it and

@@ -11,7 +11,7 @@ accelerators.
 
 ## The Big picture
 
-In the very [first blog post](README.md) we explained how
+In the very [first blog post](index.html) we explained how
 accelerators were started, through
 [`qemu_init_vcpu()`](https://github.com/qemu/qemu/tree/v4.2.0/cpus.c#L2134). 
 
