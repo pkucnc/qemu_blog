@@ -27,24 +27,24 @@ We won't explain usage and other things that can be found in the
 official documentation. The following topics will be addressed:
 
 QEMU Internals:
-- [00 Creating a new machine](machine.html)
-- [01 Controlling memory regions](regions.html)
-- [02 Creating interrupts controller and new devices](devices.html)
-- [03 Timers](timers.html)
-- [04 Execution loop and accelerators](exec.html)
-- [05 Breakpoints handling](brk.html)
-- [06 VM running states](runstate.html)
-- [07 VM Snapshotting](snapshot.html)
+- [01 Creating a new machine](machine.html)
+- [02 Controlling memory regions](regions.html)
+- [03 Creating interrupts controller and new devices](devices.html)
+- [04 Timers](timers.html)
+- [05 Execution loop and accelerators](exec.html)
+- [06 Breakpoints handling](brk.html)
+- [07 VM running states](runstate.html)
+- [08 VM Snapshotting](snapshot.html)
 
 TCG Topics:
-- [08.1 TCG IR generation](tcg_ir.html)
-- [08.2 TCG Host code generation](tcg_host.html)
-- [08.3 TCG Memory Operations](tcg_mem.html)
+- [09.1 TCG IR generation](tcg_ir.html)
+- [09.2 TCG Host code generation](tcg_host.html)
+- [09.3 TCG Memory Operations](tcg_mem.html)
 
 PCIe Topics:
-- [09.1 PCIe overview](pcie.html)
-- [09.2 PCIe controller emulation](pcie_controller.html)
-- [09.3 PCIe device emulation](pcie_device.html)
+- [10.1 PCIe overview](pcie.html)
+- [10.2 PCIe controller emulation](pcie_controller.html)
+- [10.3 PCIe device emulation](pcie_device.html)
 
 The official code and documentation can be found here:
 

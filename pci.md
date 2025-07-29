@@ -1,6 +1,6 @@
 ---
 layout: default
-title: 05 Add PCIe Root Complex
+title: 10.2 PCIe controller emulation
 ---
 
 # A deep dive into QEMU: PCIe, the master side

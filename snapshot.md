@@ -1,6 +1,6 @@
 ---
 layout: default
-title: 07 VM Snapshotting
+title: 08 VM Snapshotting
 ---
 
 # A deep dive into QEMU: snapshot API

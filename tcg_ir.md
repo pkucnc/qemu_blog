@@ -1,6 +1,6 @@
 ---
 layout: default
-title: 07.1 TCG IR generation
+title: 09.1 TCG IR generation
 ---
 
 # A deep dive into QEMU: The Tiny Code Generator (TCG), part 1, IR generation
