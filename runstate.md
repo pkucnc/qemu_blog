@@ -12,11 +12,11 @@ As you may imagine, a virtual machine and especially its virtual CPU
 goes through different running states during its lifetime:
 
 ```json
-{ 'enum': 'RunState',
-  'data': [ 'debug', 'inmigrate', 'internal-error', 'io-error', 'paused',
-            'postmigrate', 'prelaunch', 'finish-migrate', 'restore-vm',
-            'running', 'save-vm', 'shutdown', 'suspended', 'watchdog',
-            'guest-panicked', 'colo' ] }
+{ "enum": "RunState",
+  "data": [ "debug", "inmigrate", "internal-error", "io-error", "paused",
+            "postmigrate", "prelaunch", "finish-migrate", "restore-vm",
+            "running", "save-vm", "shutdown", "suspended", "watchdog",
+            "guest-panicked", "colo" ] }
 ```
 
 These states are translated to a C enumeration type
@@ -92,19 +92,21 @@ static bool main_loop_should_exit(void)
 If you remember the [breakpoints handling post](brk.html), while
 handling the debug exception being raised, QEMU prepared a **debug
 request** to the main loop from
-[`cpu_handle_guest_debug`](https://github.com/qemu/qemu/tree/v4.2.0/cpus.c#L1141):
+[`cpu_handle_guest_debug`](https://github.com/qemu/qemu/tree/v10.0.2/system/cpus.c#L334):
 
 ```c
 static void cpu_handle_guest_debug(CPUState *cpu)
 {
+    ...
     gdb_set_stop_cpu(cpu);
     qemu_system_debug_request();
     cpu->stopped = true;
+    ...
 }
 ```
 
 The
-[`qemu_system_debug_request`](https://github.com/qemu/qemu/tree/v4.2.0/vl.c#L1737)
+[`qemu_system_debug_request`](https://github.com/qemu/qemu/tree/v10.0.2/system/runstate.c#L765)
 actually triggers an event notification to the main loop:
 
 ```c
@@ -116,10 +118,10 @@ void qemu_system_debug_request(void)
 ```
 
 Back to the main loop, QEMU checks for a debug event with
-[`qemu_debug_requested`](https://github.com/qemu/qemu/tree/v4.2.0/vl.c#L1527)
+[`qemu_debug_requested`](https://github.com/qemu/qemu/tree/v10.0.2/system/runstate.c#L776)
 and in that case changes the virtual machine running state to that of
 the related event with
-[`vm_stop`](https://github.com/qemu/qemu/tree/v4.2.0/cpus.c#L2161):
+[`vm_stop`](https://github.com/qemu/qemu/tree/v10.0.2/system/cpus.c#L720):
 
 ```c
 static bool main_loop_should_exit(void)
@@ -127,6 +129,7 @@ static bool main_loop_should_exit(void)
 ...
     if (qemu_debug_requested()) {
         vm_stop(RUN_STATE_DEBUG);
+    }
 ...
 }
 
@@ -135,10 +138,6 @@ int vm_stop(RunState state)
     if (qemu_in_vcpu_thread()) {
         qemu_system_vmstop_request_prepare();
         qemu_system_vmstop_request(state);
-        /*
-         * FIXME: should not return to device code in case
-         * vm_stop() has been requested.
-         */
         cpu_stop_current();
         return 0;
     }
@@ -148,31 +147,34 @@ int vm_stop(RunState state)
 
 ```
 
-The [`vm_stop`](https://github.com/qemu/qemu/tree/v4.2.0/cpus.c#L2161)
+The [`vm_stop`](https://github.com/qemu/qemu/tree/v10.0.2/system/cpus.c#L720)
 function checks where it is called from. If for instance a virtual CPU
 calls it during the emulation of an instruction, a **stop request** is
 raised instead of handling the run state transition directly. Because
 state transitions **only happen** in the QEMU main loop thread.
 
 Obviously, there exists the opposite service to start/resume a VM:
-[`vm_start`](https://github.com/qemu/qemu/tree/v4.2.0/cpus.c#L2211).
-
+[`vm_start`](https://github.com/qemu/qemu/tree/v10.0.2/system/cpus.c#L776).
 
 ## VMState change handlers
 
 The real state transition service is
-[`do_vm_stop`](https://github.com/qemu/qemu/tree/v4.2.0/cpus.c#L1096)
+[`do_vm_stop`](https://github.com/qemu/qemu/tree/v10.0.2/system/cpus.c#L290)
 and we can see it implements all the low level mechanics:
 
 ```c
 static int do_vm_stop(RunState state, bool send_stop)
 {
     int ret = 0;
+    RunState oldstate = runstate_get();
 
-    if (runstate_is_running()) {
-        cpu_disable_ticks();
-        pause_all_vcpus();
+    if (runstate_is_live(oldstate)) {
+        vm_was_suspended = (oldstate == RUN_STATE_SUSPENDED);
         runstate_set(state);
+        cpu_disable_ticks();
+        if (oldstate == RUN_STATE_RUNNING) {
+            pause_all_vcpus();
+        }
         vm_state_notify(0, state);
         if (send_stop) {
             qapi_event_send_stop();
@@ -181,6 +183,7 @@ static int do_vm_stop(RunState state, bool send_stop)
 
     bdrv_drain_all();
     ret = bdrv_flush_all();
+    trace_vm_stop_flush_all(ret);
 
     return ret;
 }
@@ -188,21 +191,24 @@ static int do_vm_stop(RunState state, bool send_stop)
 
 QEMU stops the vCPU, tick counting and associated virtual clocks. It
 also calls a special service:
-[`vm_state_notify`](https://github.com/qemu/qemu/tree/v4.2.0/vl.c#L1423)
+[`vm_state_notify`](https://github.com/qemu/qemu/tree/v10.0.2/system/runstate.c#L382)
 with the new running state of the VM as argument. Interestingly, we
 are able to register callbacks to get notified of every VM running
 state change thanks to
-[`qemu_add_vm_change_state_handler`](https://github.com/qemu/qemu/tree/v4.2.0/vl.c#L1411):
+[`qemu_add_vm_change_state_handler`](https://github.com/qemu/qemu/tree/v10.0.2/system/runstate.c#L345):
 
 ```c
-VMChangeStateEntry *qemu_add_vm_change_state_handler_prio(
-        VMChangeStateHandler *cb, void *opaque, int priority)
+VMChangeStateEntry *
+qemu_add_vm_change_state_handler_prio_full(VMChangeStateHandler *cb,
+                                           VMChangeStateHandler *prepare_cb,
+                                           void *opaque, int priority)
 {
     VMChangeStateEntry *e;
     VMChangeStateEntry *other;
 
     e = g_malloc0(sizeof(*e));
     e->cb = cb;
+    e->prepare_cb = prepare_cb;
     e->opaque = opaque;
     e->priority = priority;
 
@@ -218,17 +224,19 @@ VMChangeStateEntry *qemu_add_vm_change_state_handler_prio(
     return e;
 }
 
-void vm_state_notify(int running, RunState state)
+void vm_state_notify(bool running, RunState state)
 {
     VMChangeStateEntry *e, *next;
 
     trace_vm_state_notify(running, state, RunState_str(state));
 
     if (running) {
+        ...
         QTAILQ_FOREACH_SAFE(e, &vm_change_state_head, entries, next) {
             e->cb(e->opaque, running, state);
         }
     } else {
+        ...
         QTAILQ_FOREACH_REVERSE_SAFE(e, &vm_change_state_head, entries, next) {
             e->cb(e->opaque, running, state);
         }
@@ -237,7 +245,7 @@ void vm_state_notify(int running, RunState state)
 ```
 
 This is extremely convenient. As an example, the [GDB server
-stub](https://github.com/qemu/qemu/tree/v4.2.0//gdbstub.c#L3365) does
+stub](https://github.com/qemu/qemu/tree/v10.0.2/gdbstub/system.c#L337) does
 register a callback to intercept debug events and check for gdb client
 breakpoints:
 
@@ -258,6 +266,7 @@ static void gdb_vm_state_change(void *opaque, int running, RunState state)
         ret = GDB_SIGNAL_TRAP;
         break;
 ...
+    }
 }
 ```
 
@@ -273,12 +282,10 @@ callbacks are called from that thread.
 
 In that context, we **should not** try to stop the VM because we have
 seen that the
-[`do_vm_stop`](https://github.com/qemu/qemu/tree/v4.2.0/cpus.c#L1096)
+[`do_vm_stop`](https://github.com/qemu/qemu/tree/v10.0.2/system/cpus.c#L290)
 service will try to disable all vCPU associated virtual clocks. And
 *disabling the clocks will wait for related timerlists to stop* as
-stated in the [~~documentation~~
-code](https://github.com/qemu/qemu/tree/v4.2.0/util/qemu-timer.c#L148). This
-will lead to a **dead-lock**.
+stated in the [~~documentation~~ code](https://github.com/qemu/qemu/tree/v10.0.2/util/qemu-timer.c#L150). This will lead to a **dead-lock**.
 
 The correct way to proceed is to request a state transition from the
 timer callback itself:
@@ -292,9 +299,9 @@ void my_user_timeout_cb(void *opaque)
 }
 ```
 
-And in your vm change state handler, **aysnchronously** deal with that
+And in your vm change state handler, **asynchronously** deal with that
 state thanks to
-[`async_run_on_cpu`](https://github.com/qemu/qemu/tree/v4.2.0/cpus-common.c#L149):
+[`async_run_on_cpu`](https://github.com/qemu/qemu/tree/v10.0.2/cpus-common.c#L168):
 
 ```c
 void my_vm_state_change(void *opaque, int running, RunState state)
@@ -305,13 +312,14 @@ void my_vm_state_change(void *opaque, int running, RunState state)
       async_run_on_cpu(cpu, my_async_timeout_vm, RUN_ON_CPU_HOST_PTR(arg));
       return;
    }
+}
 ```
 
 This way, the `my_async_timeout_vm` function is added into the given
 `cpu` work queue as a new
-[`qemu_work_item`](https://github.com/qemu/qemu/tree/v4.2.0/cpus-common.c#L101)
+[`qemu_work_item`](https://github.com/qemu/qemu/tree/v10.0.2/cpus-common.c#L126)
 and will be called out of the main loop context. It is safe to
 consider your VM in the requested state (PAUSED) now and try to resume
 it with
-[`vm_start`](https://github.com/qemu/qemu/tree/v4.2.0/cpus.c#L2211)
+[`vm_start`](https://github.com/qemu/qemu/tree/v10.0.2/system/cpus.c#L776)
 for instance.
