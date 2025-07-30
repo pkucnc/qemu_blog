@@ -68,7 +68,7 @@ our new machine and futur devices:
 ```bash
 $ cat hw/riscv/meson.build
 ...
-riscv_ss.add(files('CONFIG_CLABPU', if_true: files('clabpu.c')))
+riscv_ss.add(when: 'CONFIG_CLABPU', if_true: files('clabpu.c'))
 ...
 
 $ cat hw/riscv/Kconfig
