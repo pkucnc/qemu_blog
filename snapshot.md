@@ -111,7 +111,8 @@ static void clabpu_timer_class_init(ObjectClass *klass, void *data)
     dc->unrealize = clabpu_timer_unrealize;
     dc->legacy_reset = clabpu_timer_reset;
     dc->vmsd = &vmstate_clabpu_timer;
-    device_class_set_props(dc, clabpu_timer_properties);
+    device_class_set_props_n(dc, clabpu_timer_properties, 
+                        ARRAY_SIZE(clabpu_timer_properties));
     dc->desc = "CLabPU Timer";
     set_bit(DEVICE_CATEGORY_MISC, dc->categories);
 }
