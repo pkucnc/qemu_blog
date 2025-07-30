@@ -80,8 +80,6 @@ config CLABPU
     select RISCV_NUMA
     select HTIF
     select RISCV_ACLINT
-    select SIFIVE_PLIC
-    select CLABPU_INTC
 ...
 ```
 
