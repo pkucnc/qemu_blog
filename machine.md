@@ -83,7 +83,7 @@ config CLABPU
 ...
 ```
 
-## Creating a new machine: `hw/riscv/clabpu.c`
+## Creating a new machine: `hw/riscv/clabpu.c` and `include/hw/riscv/clabpu.h`
 
 To implement a new machine in QEMU we will need to create QOM
 [`TypeInfo`](https://github.com/qemu/qemu/tree/v10.0.2/include/qom/object.h#L435)
@@ -95,6 +95,34 @@ initialization functions.
 
 You can find documentation about [QOM
 conventions](https://wiki.qemu.org/Documentation/QOMConventions).
+
+We put type definitions in `include/hw/riscv/clabpu.h`:
+
+```c
+#ifndef HW_RISCV_CLABPU_H
+#define HW_RISCV_CLABPU_H
+
+#include "hw/boards.h"
+#include "hw/riscv/riscv_hart.h"
+#include "hw/sysbus.h"
+
+#define TYPE_CLABPU_MACHINE MACHINE_TYPE_NAME("clabpu")
+typedef struct CLabPUState CLabPUState;
+DECLARE_INSTANCE_CHECKER(CLabPUState, CLABPU_MACHINE, TYPE_CLABPU_MACHINE)
+
+void clabpu_machine_init(ObjectClass *oc, void *data);
+
+struct CLabPUState {
+    /*< private >*/
+    MachineState parent;
+
+    /*< public >*/
+    RISCVHartArrayState soc;
+
+};
+
+#endif // HW_RISCV_CLABPU_H
+```
 
 ### The TypeInfo
 
